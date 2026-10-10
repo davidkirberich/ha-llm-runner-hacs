@@ -10,6 +10,10 @@ This is an **optional** HACS companion for the [HA LLM Runner add-on](https://gi
 
 The integration reuses Home Assistant's MQTT connection. It does not ask for, store, or publish broker credentials. It creates no duplicate entities and starts no subprocess.
 
+The integration includes the add-on's original icon and logo in
+`custom_components/llm_runner/brand/`. Home Assistant 2026.3 and newer supports these
+local brand images; older supported versions may show a generic integration icon.
+
 ## Install with HACS
 
 1. In HACS, open **Integrations** and select the three-dot menu → **Custom repositories**.
