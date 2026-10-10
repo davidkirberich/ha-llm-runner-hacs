@@ -1,0 +1,44 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "The single runner instance is already configured."
+    },
+    "error": {
+      "mqtt_unavailable": "Home Assistant's MQTT integration is not connected."
+    },
+    "step": {
+      "user": {
+        "description": "Uses the MQTT integration already configured in Home Assistant. No broker credentials are requested here. Setup waits for the add-on's online status and task catalog.",
+        "data": {}
+      }
+    }
+  },
+  "services": {
+    "execute": {
+      "name": "Execute task",
+      "description": "Run one catalogued add-on task and return its result. Task IDs are validated against the live runner catalog.",
+      "fields": {
+        "task_id": {
+          "name": "Task ID",
+          "description": "Exact task_id from the add-on task configuration."
+        },
+        "timeout": {
+          "name": "Timeout",
+          "description": "Maximum wait in seconds, including queue time. Expiration stops waiting only; it does not cancel the add-on task."
+        },
+        "files": {
+          "name": "Files",
+          "description": "Optional mapping of configured file-input aliases to paths."
+        },
+        "variables": {
+          "name": "Variables",
+          "description": "Optional mapping of configured variable aliases to string values."
+        },
+        "request_id": {
+          "name": "Request ID",
+          "description": "Optional non-empty correlation value, up to 4096 characters."
+        }
+      }
+    }
+  }
+}

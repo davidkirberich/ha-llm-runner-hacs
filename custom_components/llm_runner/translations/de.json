@@ -1,0 +1,44 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "Die einzelne Runner-Instanz ist bereits eingerichtet."
+    },
+    "error": {
+      "mqtt_unavailable": "Die MQTT-Integration von Home Assistant ist nicht verbunden."
+    },
+    "step": {
+      "user": {
+        "description": "Verwendet die bereits in Home Assistant eingerichtete MQTT-Integration. Hier werden keine Broker-Zugangsdaten abgefragt. Beim Einrichten werden der Online-Status und der Aufgabenkatalog des Add-ons abgewartet.",
+        "data": {}
+      }
+    }
+  },
+  "services": {
+    "execute": {
+      "name": "Aufgabe ausführen",
+      "description": "Führt eine Aufgabe aus dem aktuellen Add-on-Katalog aus und gibt ihr Ergebnis zurück. Die Aufgaben-ID wird gegen den Live-Katalog geprüft.",
+      "fields": {
+        "task_id": {
+          "name": "Aufgaben-ID",
+          "description": "Exakte task_id aus der Aufgabenkonfiguration des Add-ons."
+        },
+        "timeout": {
+          "name": "Zeitlimit",
+          "description": "Maximale Wartezeit in Sekunden einschließlich Warteschlange. Bei Ablauf endet nur das Warten; die Add-on-Aufgabe wird nicht abgebrochen."
+        },
+        "files": {
+          "name": "Dateien",
+          "description": "Optionale Zuordnung konfigurierter Datei-Aliase zu Pfaden."
+        },
+        "variables": {
+          "name": "Variablen",
+          "description": "Optionale Zuordnung konfigurierter Variablen-Aliase zu Zeichenketten."
+        },
+        "request_id": {
+          "name": "Anfrage-ID",
+          "description": "Optionaler, nicht leerer Korrelationswert mit maximal 4096 Zeichen."
+        }
+      }
+    }
+  }
+}

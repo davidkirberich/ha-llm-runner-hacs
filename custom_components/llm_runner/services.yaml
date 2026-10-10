@@ -1,0 +1,31 @@
+execute:
+  fields:
+    task_id:
+      required: true
+      example: describe_weather
+      selector:
+        text:
+    timeout:
+      default: 180
+      example: 180
+      selector:
+        number:
+          min: 0.1
+          max: 86400
+          step: 0.1
+          unit_of_measurement: seconds
+          mode: box
+    files:
+      example:
+        image: /config/www/weather/latest.jpg
+      selector:
+        object:
+    variables:
+      example:
+        location: "Living room"
+      selector:
+        object:
+    request_id:
+      example: weather-automation-2026-10-10
+      selector:
+        text:
