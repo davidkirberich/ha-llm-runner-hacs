@@ -19,8 +19,8 @@
       "description": "Run one catalogued add-on task and return its result. Task IDs are validated against the live runner catalog.",
       "fields": {
         "task_id": {
-          "name": "Task ID",
-          "description": "Exact task_id from the add-on task configuration."
+          "name": "Task",
+          "description": "Select a task from the runner's live task catalog."
         },
         "timeout": {
           "name": "Timeout",

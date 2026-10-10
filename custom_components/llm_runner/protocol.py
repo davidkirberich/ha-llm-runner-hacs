@@ -24,7 +24,6 @@ from .const import (
     MAX_RESULT_NODES,
     MAX_TASKS,
     MAX_TASK_ID_LENGTH,
-    MAX_TASK_NAME_LENGTH,
     MAX_VARIABLE_LENGTH,
     PROTOCOL_VERSION,
     RUN_ID_PATTERN,
@@ -110,7 +109,7 @@ class _Waiter:
     future: asyncio.Future[dict[str, Any]]
 
 
-Subscribe = Callable[[str, Callable[[str, bool], None]], Callable[[], None]]
+Subscribe = Callable[[str, Callable[[str, bool], None]], Awaitable[Callable[[], None]]]
 Publish = Callable[[str, str, int, bool], Awaitable[None]]
 
 
@@ -205,8 +204,8 @@ def validate_availability(payload: str) -> tuple[str, str]:
     return message["session_id"], message["state"]
 
 
-def validate_catalog(payload: str) -> tuple[str, dict[str, str]]:
-    """Validate and return a v1 catalog session and task-name mapping."""
+def validate_catalog(payload: str) -> tuple[str, frozenset[str]]:
+    """Validate and return a v1 catalog session and its task IDs."""
     message = _parse_json(payload, MAX_CATALOG_BYTES, "Task catalog")
     if set(message) != {"protocol", "session_id", "tasks"}:
         raise RunnerProtocolError("Task catalog has unexpected or missing fields")
@@ -218,19 +217,17 @@ def validate_catalog(payload: str) -> tuple[str, dict[str, str]]:
     tasks = message["tasks"]
     if not isinstance(tasks, list) or len(tasks) > MAX_TASKS:
         raise RunnerProtocolError("Task catalog tasks must be a bounded list")
-    names: dict[str, str] = {}
+    task_ids: set[str] = set()
     for task in tasks:
-        if not isinstance(task, dict) or set(task) != {"task_id", "name"}:
-            raise RunnerProtocolError("Each task must contain only task_id and name")
-        task_id, name = task["task_id"], task["name"]
+        if not isinstance(task, dict) or set(task) != {"task_id"}:
+            raise RunnerProtocolError("Each task must contain only task_id")
+        task_id = task["task_id"]
         if not _is_task_id(task_id):
             raise RunnerProtocolError("Task catalog contains an invalid task_id")
-        if not _is_bounded_text(name, MAX_TASK_NAME_LENGTH):
-            raise RunnerProtocolError("Task catalog contains an invalid task name")
-        if task_id in names:
+        if task_id in task_ids:
             raise RunnerProtocolError("Task catalog contains duplicate task_ids")
-        names[task_id] = name
-    return session_id, names
+        task_ids.add(task_id)
+    return session_id, frozenset(task_ids)
 
 
 def _correlation_fields(message: Mapping[str, Any]) -> tuple[str, str, str] | None:
@@ -307,18 +304,24 @@ def _validate_event(message: dict[str, Any], waiter: _Waiter) -> dict[str, Any]:
 class RunnerClient:
     """Own MQTT subscriptions, readiness, and all in-flight task waiters."""
 
-    def __init__(self, subscribe: Subscribe, publish: Publish, *, loop: asyncio.AbstractEventLoop):
+    def __init__(self, subscribe: Subscribe, publish: Publish, *, loop: asyncio.AbstractEventLoop,
+                 on_tasks_changed: Callable[[], None] | None = None):
         self._subscribe = subscribe
         self._publish = publish
         self._loop = loop
         self._unsubscribers: list[Callable[[], None]] = []
         self._waiters: dict[str, _Waiter] = {}
-        self._catalogs: dict[str, dict[str, str]] = {}
+        self._catalogs: dict[str, frozenset[str]] = {}
         self._catalog_errors: dict[str, str] = {}
         self._session_id: str | None = None
         self._connected = False
         self._ready = asyncio.Event()
         self._closed = False
+        self._on_tasks_changed = on_tasks_changed
+
+    def _notify_tasks_changed(self) -> None:
+        if self._on_tasks_changed is not None:
+            self._on_tasks_changed()
 
     @property
     def session_id(self) -> str | None:
@@ -326,24 +329,23 @@ class RunnerClient:
         return self._session_id if self._ready.is_set() else None
 
     @property
-    def tasks(self) -> dict[str, str]:
-        """Current validated task catalog."""
+    def tasks(self) -> frozenset[str]:
+        """Task IDs of the current validated catalog."""
         if not self._ready.is_set() or self._session_id is None:
-            return {}
-        return self._catalogs.get(self._session_id, {})
+            return frozenset()
+        return self._catalogs.get(self._session_id, frozenset())
 
-    def start(self, initially_connected: bool) -> None:
+    async def async_start(self, initially_connected: bool) -> None:
         """Subscribe before any request can be published."""
         if self._closed:
             raise RunnerUnavailable("The integration client has been unloaded")
         self._connected = initially_connected
-        self._unsubscribers.extend(
-            (
-                self._subscribe(TOPIC_AVAILABILITY, self._on_availability),
-                self._subscribe(TOPIC_TASKS, self._on_catalog),
-                self._subscribe(TOPIC_EVENTS, self._on_event),
-            )
-        )
+        for topic, handler in (
+            (TOPIC_AVAILABILITY, self._on_availability),
+            (TOPIC_TASKS, self._on_catalog),
+            (TOPIC_EVENTS, self._on_event),
+        ):
+            self._unsubscribers.append(await self._subscribe(topic, handler))
 
     def add_unsubscriber(self, unsubscribe: Callable[[], None]) -> None:
         """Track an additional MQTT status subscription for unload cleanup."""
@@ -358,6 +360,7 @@ class RunnerClient:
             self._session_id = None
             self._ready.clear()
             self._fail_waiters(RunnerDisconnected("MQTT disconnected during task execution"))
+            self._notify_tasks_changed()
 
     def _refresh_ready(self) -> None:
         if (
@@ -372,6 +375,7 @@ class RunnerClient:
             self._ready.set()
         else:
             self._ready.clear()
+        self._notify_tasks_changed()
 
     def _on_availability(self, payload: str, retained: bool) -> None:
         try:
@@ -384,6 +388,7 @@ class RunnerClient:
             self._session_id = None
             self._ready.clear()
             self._fail_waiters(RunnerUnavailable("The LLM Runner add-on is offline"))
+            self._notify_tasks_changed()
             return
         if self._session_id is not None and self._session_id != session_id:
             self._fail_waiters(RunnerRestarted("The LLM Runner add-on restarted during task execution"))
@@ -533,6 +538,7 @@ class RunnerClient:
         for unsubscribe in self._unsubscribers:
             unsubscribe()
         self._unsubscribers.clear()
+        self._notify_tasks_changed()
 
 
 def validate_invocation(

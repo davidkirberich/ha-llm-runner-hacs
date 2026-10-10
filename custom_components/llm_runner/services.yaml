@@ -4,7 +4,9 @@ execute:
       required: true
       example: describe_weather
       selector:
-        text:
+        select:
+          options: []
+          mode: dropdown
     timeout:
       default: 180
       example: 180

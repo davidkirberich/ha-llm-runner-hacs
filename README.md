@@ -5,7 +5,7 @@ This is an **optional** HACS companion for the [HA LLM Runner add-on](https://gi
 ## Requirements
 
 - Home Assistant **2025.3.0 or newer**.
-- The HA LLM Runner add-on using **MQTT protocol v1**.
+- The HA LLM Runner add-on **1.5.0 or newer** (MQTT protocol v1).
 - Home Assistant's built-in MQTT integration configured, connected to the same broker as the add-on.
 
 The integration reuses Home Assistant's MQTT connection. It does not ask for, store, or publish broker credentials. It creates no duplicate entities and starts no subprocess.
@@ -26,7 +26,12 @@ The setup form has no broker fields because the existing MQTT integration provid
 
 ## Execute a task and capture its response
 
-Task selection uses a **text field**. Home Assistant's [select selector](https://www.home-assistant.io/docs/blueprint/selectors/#select-selector) requires a list of options in the service description; it does not expose a dynamic task-catalog source. The integration therefore avoids private frontend APIs and validates the entered `task_id` against the live catalog before publishing.
+Task selection uses a **dropdown** populated from the runner's live MQTT catalog.
+Options show the task IDs, which are also what the saved YAML contains (`task_id`).
+Added, renamed and removed tasks update the action description automatically through
+Home Assistant's service-description API. Reopen an already-open action editor if
+its options have not refreshed. The list clears while the runner is unavailable.
+The integration also validates the selected ID against the current catalog before publishing.
 
 For example, if a task named `weather_summary` returns an object with a `summary` field:
 
@@ -89,6 +94,11 @@ The default connection is `root@homeassistant.local`, port 22. Override it with
 folder as `/homeassistant` or `/config` and provide Bash, tar, mktemp and jq.
 
 Deployment copies only this integration to `custom_components/llm_runner`.
+The deployed manifest is automatically labelled `<version>-preview.<commit>`,
+with `.dirty` appended if the checkout has uncommitted changes. For example,
+`1.0.0-preview.6394746.dirty`. The repository manifest is not changed. This marks
+manual builds independently of the current Git branch; HACS releases retain their
+normal version. The label appears after the manual Core restart.
 Existing files are backed up under `llm_runner_deploy_backups/` in the HA configuration
 folder. **The script never restarts Home Assistant.** Restart Core manually after
 deployment, then add the integration under **Settings > Devices & services** on
@@ -117,4 +127,4 @@ Home Assistant Core's full runtime and its MQTT service are not installed or run
 
 ## License
 
-Starting with the first integration release, this project uses the [MIT License](LICENSE).
+Starting with release 1.0.0, this project uses the [MIT License](LICENSE).

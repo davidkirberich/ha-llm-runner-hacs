@@ -98,6 +98,16 @@ $source = Join-Path $PSScriptRoot "..\custom_components\llm_runner"
 if (-not (Test-Path (Join-Path $source "manifest.json"))) { throw "Integration manifest not found." }
 $manifest = Get-Content (Join-Path $source "manifest.json") -Raw | ConvertFrom-Json
 if ($manifest.domain -ne "llm_runner") { throw "Unexpected integration domain." }
+$repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$commit = git -C $repo rev-parse --short HEAD
+if ($LASTEXITCODE -ne 0) { throw "Could not determine deployment commit." }
+$changes = git -C $repo status --porcelain
+if ($LASTEXITCODE -ne 0) { throw "Could not determine worktree status." }
+$baseVersion = ([string]$manifest.version -split '[-+]')[0]
+if ($baseVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Expected a SemVer release version." }
+$previewVersion = "$baseVersion-preview.$($commit.Trim())"
+if ($changes) { $previewVersion += ".dirty" }
+Write-Host "Manual deployment version: $previewVersion"
 $uploadName = "llm_runner_deploy_$([guid]::NewGuid().ToString('N')).tar.gz"
 $archive = Join-Path ([IO.Path]::GetTempPath()) $uploadName
 $remoteArchive = "/tmp/$uploadName"
@@ -123,6 +133,8 @@ tar -xzf "$ARCHIVE" -C "$STAGE"
   echo "Incomplete integration archive." >&2; exit 1;
 }
 jq -e '.domain == "llm_runner"' "$STAGE/manifest.json" >/dev/null
+jq --arg version "__VERSION__" '.version = $version' "$STAGE/manifest.json" > "$STAGE/manifest.json.new"
+mv "$STAGE/manifest.json.new" "$STAGE/manifest.json"
 BACKUP=
 if [ -d "$TARGET" ]; then
   BACKUP_ROOT=$CONFIG/llm_runner_deploy_backups
@@ -138,11 +150,12 @@ if ! mv "$STAGE" "$TARGET"; then
 fi
 STAGE=
 echo "Integration deployed to $TARGET"
+echo "Installed version: __VERSION__"
 echo "Restart Home Assistant Core MANUALLY to load the new code."
 echo "First installation: then add HA LLM Runner under Settings > Devices & services."
 echo "No config entries, automations or add-on files were modified."
 '@
-    Invoke-Remote ($common + $deploy.Replace("__ARCHIVE__", $remoteArchive)) "Deployment failed. See the output above."
+    Invoke-Remote ($common + $deploy.Replace("__ARCHIVE__", $remoteArchive).Replace("__VERSION__", $previewVersion)) "Deployment failed. See the output above."
 }
 finally {
     if (Test-Path $archive) { Remove-Item -LiteralPath $archive }

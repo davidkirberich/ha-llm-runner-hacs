@@ -48,7 +48,7 @@ class AddonEndToEndTests(unittest.IsolatedAsyncioTestCase):
 
         broker = Broker()
 
-        def subscribe(topic, callback):
+        async def subscribe(topic, callback):
             subscribers.setdefault(topic, []).append(callback)
 
             def unsubscribe():
@@ -79,7 +79,7 @@ class AddonEndToEndTests(unittest.IsolatedAsyncioTestCase):
             )
 
         client = RunnerClient(subscribe, publish, loop=loop)
-        client.start(initially_connected=True)
+        await client.async_start(initially_connected=True)
         client._on_availability(
             json.dumps({"protocol": 1, "session_id": session_id, "state": "online"}),
             True,
@@ -89,7 +89,7 @@ class AddonEndToEndTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "protocol": 1,
                     "session_id": session_id,
-                    "tasks": [{"task_id": "weather_data", "name": "Weather data"}],
+                    "tasks": [{"task_id": "weather_data"}],
                 }
             ),
             True,

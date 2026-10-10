@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from collections.abc import Callable
 import logging
 from typing import Any
+from pathlib import Path
 
 from .const import (
     DEFAULT_TIMEOUT,
@@ -17,6 +19,28 @@ from .protocol import RunnerClient, RunnerError
 
 _LOGGER = logging.getLogger(__name__)
 _ENTRY_CLIENTS: dict[str, RunnerClient] = {}
+_DESCRIPTION_KEY = f"{DOMAIN}_execute_description"
+
+
+def _load_action_description() -> dict[str, Any]:
+    import yaml
+
+    with Path(__file__).with_name("services.yaml").open(encoding="utf-8") as stream:
+        return yaml.safe_load(stream)[SERVICE_EXECUTE]
+
+
+def _update_task_selector(hass: Any, tasks: frozenset[str]) -> None:
+    from homeassistant.helpers.service import async_set_service_schema
+
+    description = copy.deepcopy(hass.data[_DESCRIPTION_KEY])
+    description["fields"]["task_id"]["selector"] = {
+        "select": {
+            "options": sorted(tasks),
+            "mode": "dropdown",
+            "custom_value": False,
+        }
+    }
+    async_set_service_schema(hass, DOMAIN, SERVICE_EXECUTE, description)
 
 
 def _service_schema(data: dict[str, Any]) -> dict[str, Any]:
@@ -84,12 +108,15 @@ async def async_setup(hass: Any, config: dict[str, Any]) -> bool:
         schema=_build_service_schema(),
         supports_response=SupportsResponse.ONLY,
     )
+    hass.data[_DESCRIPTION_KEY] = await hass.async_add_executor_job(_load_action_description)
+    _update_task_selector(hass, {})
     return True
 
 
 async def async_setup_entry(hass: Any, entry: Any) -> bool:
     """Set up subscriptions and require a live runner catalog before loading."""
     from homeassistant.components import mqtt
+    from homeassistant.core import callback
     from homeassistant.exceptions import ConfigEntryNotReady
 
     if not mqtt.is_connected(hass):
@@ -98,44 +125,44 @@ async def async_setup_entry(hass: Any, entry: Any) -> bool:
     loop = asyncio.get_running_loop()
     client: RunnerClient
 
-    def subscribe(topic: str, callback: Callable[[str, bool], None]) -> Callable[[], None]:
+    async def subscribe(topic: str, handler: Callable[[str, bool], None]) -> Callable[[], None]:
+        @callback
         def message_received(message: Any) -> None:
-            callback(message.payload, message.retain)
+            handler(message.payload, message.retain)
 
-        return awaitable_subscribe(hass, topic, message_received)
+        return await mqtt.async_subscribe(hass, topic, message_received, qos=1)
 
     async def publish(topic: str, payload: str, qos: int, retain: bool) -> None:
         await mqtt.async_publish(hass, topic, payload, qos=qos, retain=retain)
 
-    client = RunnerClient(subscribe, publish, loop=loop)
-    client.start(initially_connected=True)
-    client.add_unsubscriber(
-        mqtt.async_subscribe_connection_status(hass, client.on_connection_change)
-    )
-    client.on_connection_change(mqtt.is_connected(hass))
+    @callback
+    def tasks_changed() -> None:
+        _update_task_selector(hass, client.tasks)
+
+    client = RunnerClient(subscribe, publish, loop=loop, on_tasks_changed=tasks_changed)
+    @callback
+    def connection_changed(connected: bool) -> None:
+        client.on_connection_change(connected)
+
     entry_id = entry.entry_id
-    _ENTRY_CLIENTS[entry_id] = client
     try:
+        await client.async_start(initially_connected=True)
+        client.add_unsubscriber(
+            mqtt.async_subscribe_connection_status(hass, connection_changed)
+        )
+        client.on_connection_change(mqtt.is_connected(hass))
         await client.async_wait_ready(SETUP_TIMEOUT)
     except RunnerError as err:
         client.close()
         _ENTRY_CLIENTS.pop(entry_id, None)
         _LOGGER.warning("Runner setup unavailable: %s", err)
         raise ConfigEntryNotReady(str(err)) from err
-    except Exception:
+    except (Exception, asyncio.CancelledError):
         client.close()
         _ENTRY_CLIENTS.pop(entry_id, None)
         raise
+    _ENTRY_CLIENTS[entry_id] = client
     return True
-
-
-def awaitable_subscribe(
-    hass: Any, topic: str, callback: Callable[[Any], None]
-) -> Callable[[], None]:
-    """Subscribe at QoS 1 using Home Assistant's MQTT integration API."""
-    from homeassistant.components import mqtt
-
-    return mqtt.async_subscribe(hass, topic, callback, qos=1)
 
 
 async def async_unload_entry(hass: Any, entry: Any) -> bool:
@@ -143,4 +170,5 @@ async def async_unload_entry(hass: Any, entry: Any) -> bool:
     client = _ENTRY_CLIENTS.pop(entry.entry_id, None)
     if client is not None:
         client.close()
+    _update_task_selector(hass, {})
     return True

@@ -19,8 +19,8 @@
       "description": "Führt eine Aufgabe aus dem aktuellen Add-on-Katalog aus und gibt ihr Ergebnis zurück. Die Aufgaben-ID wird gegen den Live-Katalog geprüft.",
       "fields": {
         "task_id": {
-          "name": "Aufgaben-ID",
-          "description": "Exakte task_id aus der Aufgabenkonfiguration des Add-ons."
+          "name": "Aufgabe",
+          "description": "Aufgabe aus dem aktuellen Aufgabenkatalog des Runners auswählen."
         },
         "timeout": {
           "name": "Zeitlimit",

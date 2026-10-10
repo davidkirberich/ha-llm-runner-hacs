@@ -31,6 +31,8 @@ function Assert([bool]$Condition, [string]$Message) {
 }
 
 $deployScript = Join-Path $PSScriptRoot "..\scripts\deploy-local.ps1"
+$manifestPath = Join-Path $PSScriptRoot "..\custom_components\llm_runner\manifest.json"
+$manifestBefore = Get-Content $manifestPath -Raw
 & $deployScript -CheckOnly
 Assert ($global:LlmRunnerDeployTest.Captured.Count -eq 1) "CheckOnly must only run preflight."
 Assert ($global:LlmRunnerDeployTest.Uploads -eq 0) "CheckOnly must not upload."
@@ -42,6 +44,9 @@ Assert ($global:LlmRunnerDeployTest.Captured.Count -eq 3) "Deploy must run prefl
 Assert (-not (Test-Path -LiteralPath $global:LlmRunnerDeployTest.LocalArchive)) "Local archive must be cleaned."
 Assert ($global:LlmRunnerDeployTest.Captured[1].Contains('trap cleanup EXIT')) "Deploy must clean temporary staging."
 Assert ($global:LlmRunnerDeployTest.Captured[1].Contains('mv "$BACKUP/llm_runner" "$TARGET"')) "Deploy must restore backup on failure."
+Assert ($global:LlmRunnerDeployTest.Captured[1] -match '\d+\.\d+\.\d+-preview\.[a-f0-9]+(?:\.dirty)?') "Deploy must label the uploaded version."
+Assert ($global:LlmRunnerDeployTest.Captured[1].Contains('.version = $version')) "Deploy must update staged manifest."
+Assert ((Get-Content $manifestPath -Raw) -ceq $manifestBefore) "Repository manifest must not change."
 
 $deployBody = $global:LlmRunnerDeployTest.Captured[1]
 $global:LlmRunnerDeployTest.Captured = @()

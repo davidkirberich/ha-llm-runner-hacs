@@ -33,7 +33,7 @@ class MemoryBroker:
         self.published: list[tuple[str, str, int, bool]] = []
         self.publish_handler: Any = None
 
-    def subscribe(self, topic: str, callback: Any) -> Any:
+    async def subscribe(self, topic: str, callback: Any) -> Any:
         callbacks = self.subscriptions.setdefault(topic, [])
         callbacks.append(callback)
 
@@ -61,7 +61,7 @@ class RunnerClientTests(unittest.IsolatedAsyncioTestCase):
             self.broker.publish,
             loop=asyncio.get_running_loop(),
         )
-        self.client.start(initially_connected=True)
+        await self.client.async_start(initially_connected=True)
         self.broker.emit(
             "ha_llm_runner/availability",
             {"protocol": 1, "session_id": SESSION, "state": "online"},
@@ -72,7 +72,7 @@ class RunnerClientTests(unittest.IsolatedAsyncioTestCase):
             {
                 "protocol": 1,
                 "session_id": SESSION,
-                "tasks": [{"task_id": "weather", "name": "Weather summary"}],
+                "tasks": [{"task_id": "weather"}],
             },
             retained=True,
         )
@@ -215,7 +215,7 @@ class RunnerClientTests(unittest.IsolatedAsyncioTestCase):
             {
                 "protocol": 1,
                 "session_id": SESSION,
-                "tasks": [{"task_id": "weather", "name": "Weather summary"}],
+                "tasks": [{"task_id": "weather"}],
             },
             retained=True,
         )
@@ -234,13 +234,13 @@ class RunnerClientTests(unittest.IsolatedAsyncioTestCase):
             self.broker.publish,
             loop=asyncio.get_running_loop(),
         )
-        other.start(initially_connected=True)
+        await other.async_start(initially_connected=True)
         other._on_catalog(
             json.dumps(
                 {
                     "protocol": 1,
                     "session_id": NEW_SESSION,
-                    "tasks": [{"task_id": "weather", "name": "Weather summary"}],
+                    "tasks": [{"task_id": "weather"}],
                 }
             ),
             True,
@@ -259,7 +259,7 @@ class RunnerClientTests(unittest.IsolatedAsyncioTestCase):
             self.broker.publish,
             loop=asyncio.get_running_loop(),
         )
-        other.start(initially_connected=True)
+        await other.async_start(initially_connected=True)
         other._on_availability(
             json.dumps({"protocol": 1, "session_id": NEW_SESSION, "state": "online"}),
             True,
@@ -269,7 +269,7 @@ class RunnerClientTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "protocol": 1,
                     "session_id": SESSION,
-                    "tasks": [{"task_id": "weather", "name": "Weather summary"}],
+                    "tasks": [{"task_id": "weather"}],
                 }
             ),
             True,
@@ -279,6 +279,11 @@ class RunnerClientTests(unittest.IsolatedAsyncioTestCase):
         other.close()
 
     async def test_invalid_catalog_is_reported_and_duplicates_are_rejected(self) -> None:
+        with self.assertRaisesRegex(RunnerProtocolError, "only task_id"):
+            validate_catalog(json.dumps({
+                "protocol": 1, "session_id": SESSION,
+                "tasks": [{"task_id": "weather", "name": "Weather"}],
+            }))
         with self.assertRaises(RunnerProtocolError):
             validate_catalog(
                 json.dumps(
@@ -286,8 +291,8 @@ class RunnerClientTests(unittest.IsolatedAsyncioTestCase):
                         "protocol": 1,
                         "session_id": SESSION,
                         "tasks": [
-                            {"task_id": "weather", "name": "One"},
-                            {"task_id": "weather", "name": "Two"},
+                            {"task_id": "weather"},
+                            {"task_id": "weather"},
                         ],
                     }
                 )
@@ -297,7 +302,7 @@ class RunnerClientTests(unittest.IsolatedAsyncioTestCase):
             self.broker.publish,
             loop=asyncio.get_running_loop(),
         )
-        other.start(initially_connected=True)
+        await other.async_start(initially_connected=True)
         other._on_availability(
             json.dumps({"protocol": 1, "session_id": NEW_SESSION, "state": "online"}),
             True,
@@ -307,7 +312,7 @@ class RunnerClientTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "protocol": 1,
                     "session_id": NEW_SESSION,
-                    "tasks": [{"task_id": "bad/id", "name": "Broken"}],
+                    "tasks": [{"task_id": "bad/id"}],
                 }
             ),
             True,

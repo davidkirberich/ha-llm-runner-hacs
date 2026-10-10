@@ -43,6 +43,11 @@ class FakeHomeAssistant:
         self.connection_callbacks = []
         self.services = SimpleNamespace(async_register=self._register_service)
         self.registered_services = {}
+        self.data = {}
+        self.descriptions = {}
+
+    async def async_add_executor_job(self, function, *args):
+        return function(*args)
 
     def _register_service(self, domain, name, handler, **options) -> None:
         self.registered_services[(domain, name)] = (handler, options)
@@ -69,8 +74,9 @@ class IntegrationHarnessTests(unittest.IsolatedAsyncioTestCase):
         self.mqtt = ModuleType("homeassistant.components.mqtt")
         self.mqtt.is_connected = lambda hass: hass.connected
 
-        def async_subscribe(hass, topic, callback, *, qos=0):
+        async def async_subscribe(hass, topic, callback, *, qos=0):
             self.assertEqual(qos, 1)
+            self.assertTrue(getattr(callback, "_hass_callback", False))
             return hass.broker.subscribe(topic, callback)
 
         def async_subscribe_connection_status(hass, callback):
@@ -107,12 +113,23 @@ class IntegrationHarnessTests(unittest.IsolatedAsyncioTestCase):
             ONLY = "only"
 
         core.SupportsResponse = SupportsResponse
+        def callback(handler):
+            handler._hass_callback = True
+            return handler
+        core.callback = callback
+        helpers = ModuleType("homeassistant.helpers")
+        service = ModuleType("homeassistant.helpers.service")
+        def async_set_service_schema(hass, domain, name, description):
+            hass.descriptions[(domain, name)] = description
+        service.async_set_service_schema = async_set_service_schema
         modules = {
             "homeassistant": homeassistant,
             "homeassistant.components": components,
             "homeassistant.components.mqtt": self.mqtt,
             "homeassistant.exceptions": exceptions,
             "homeassistant.core": core,
+            "homeassistant.helpers": helpers,
+            "homeassistant.helpers.service": service,
             "voluptuous": _fake_voluptuous(),
         }
         self.module_patch = patch.dict("sys.modules", modules)
@@ -133,7 +150,7 @@ class IntegrationHarnessTests(unittest.IsolatedAsyncioTestCase):
             {
                 "protocol": 1,
                 "session_id": self.session_id,
-                "tasks": [{"task_id": "weather", "name": "Weather"}],
+                "tasks": [{"task_id": "weather"}],
             },
             retained=True,
         )
@@ -189,3 +206,60 @@ class IntegrationHarnessTests(unittest.IsolatedAsyncioTestCase):
         await self.integration.async_unload_entry(self.hass, self.entry)
         self.assertTrue(all(not callbacks for callbacks in self.broker.subscriptions.values()))
         self.assertEqual(self.hass.connection_callbacks, [])
+        self.assertEqual(self.task_options(), [])
+
+    def task_options(self):
+        return self.hass.descriptions[("llm_runner", "execute")]["fields"]["task_id"]["selector"]["select"]["options"]
+
+    async def test_task_dropdown_tracks_catalog_and_preserves_other_fields(self) -> None:
+        self.assertEqual(self.task_options(), ["weather"])
+        self.broker.emit("ha_llm_runner/tasks", {
+            "protocol": 1, "session_id": self.session_id,
+            "tasks": [{"task_id": "z"}, {"task_id": "weather"}],
+        }, retained=True)
+        self.assertEqual(self.task_options(), ["weather", "z"])
+        fields = self.hass.descriptions[("llm_runner", "execute")]["fields"]
+        self.assertEqual(set(fields), {"task_id", "timeout", "files", "variables", "request_id"})
+        self.assertEqual(fields["timeout"]["default"], 180)
+        self.broker.emit("ha_llm_runner/tasks", {
+            "protocol": 1, "session_id": self.session_id, "tasks": [],
+        }, retained=True)
+        self.assertEqual(self.task_options(), [])
+
+    async def test_task_dropdown_clears_on_disconnect_and_recovers(self) -> None:
+        self.broker.emit("ha_llm_runner/availability", {
+            "protocol": 1, "session_id": self.session_id, "state": "offline",
+        }, retained=True)
+        self.assertEqual(self.task_options(), [])
+        self.broker.emit("ha_llm_runner/availability", {
+            "protocol": 1, "session_id": self.session_id, "state": "online",
+        }, retained=True)
+        self.assertEqual(len(self.task_options()), 1)
+        for callback in self.hass.connection_callbacks:
+            callback(False)
+        self.assertEqual(self.task_options(), [])
+
+    async def test_setup_timeout_cleans_real_async_subscription_callbacks(self) -> None:
+        await self.integration.async_unload_entry(self.hass, self.entry)
+        with patch.object(self.integration, "SETUP_TIMEOUT", 0.01):
+            with self.assertRaisesRegex(Exception, "matching online availability"):
+                await self.integration.async_setup_entry(self.hass, self.entry)
+        self.assertNotIn(self.entry.entry_id, self.integration._ENTRY_CLIENTS)
+        self.assertTrue(all(not callbacks for callbacks in self.broker.subscriptions.values()))
+        self.assertEqual(self.hass.connection_callbacks, [])
+
+    async def test_partial_subscription_failure_cleans_previous_subscriptions(self) -> None:
+        await self.integration.async_unload_entry(self.hass, self.entry)
+        original = self.mqtt.async_subscribe
+        count = 0
+        async def failing_subscribe(*args, **kwargs):
+            nonlocal count
+            count += 1
+            if count == 2:
+                raise RuntimeError("subscription failed")
+            return await original(*args, **kwargs)
+        with patch.object(self.mqtt, "async_subscribe", failing_subscribe):
+            with self.assertRaisesRegex(RuntimeError, "subscription failed"):
+                await self.integration.async_setup_entry(self.hass, self.entry)
+        self.assertTrue(all(not callbacks for callbacks in self.broker.subscriptions.values()))
+        self.assertNotIn(self.entry.entry_id, self.integration._ENTRY_CLIENTS)
