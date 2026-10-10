@@ -1,0 +1,12 @@
+{
+  "domain": "llm_runner",
+  "name": "HA LLM Runner",
+  "codeowners": ["@davidkirberich"],
+  "config_flow": false,
+  "dependencies": ["mqtt"],
+  "documentation": "https://github.com/davidkirberich/ha-llm-runner-hacs",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/davidkirberich/ha-llm-runner-hacs/issues",
+  "version": "0.0.0"
+}
