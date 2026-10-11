@@ -16,7 +16,7 @@
   "services": {
     "execute": {
       "name": "Aufgabe ausführen",
-      "description": "Führt eine Aufgabe aus dem aktuellen Add-on-Katalog aus und gibt ihr Ergebnis zurück. Die Aufgaben-ID wird gegen den Live-Katalog geprüft.",
+      "description": "Führt eine Aufgabe aus dem aktuellen Add-on-Katalog aus. Die Antwort ist optional; die Aufgaben-ID wird gegen den Live-Katalog geprüft.",
       "fields": {
         "task_id": {
           "name": "Aufgabe",

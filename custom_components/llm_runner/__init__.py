@@ -80,7 +80,7 @@ def _build_service_schema() -> Any:
 
 
 async def async_setup(hass: Any, config: dict[str, Any]) -> bool:
-    """Register the response-only task action even before an entry is configured."""
+    """Register the task action with an optional response."""
     from homeassistant.core import SupportsResponse
     from homeassistant.exceptions import HomeAssistantError
 
@@ -106,7 +106,7 @@ async def async_setup(hass: Any, config: dict[str, Any]) -> bool:
         SERVICE_EXECUTE,
         async_execute,
         schema=_build_service_schema(),
-        supports_response=SupportsResponse.ONLY,
+        supports_response=SupportsResponse.OPTIONAL,
     )
     hass.data[_DESCRIPTION_KEY] = await hass.async_add_executor_job(_load_action_description)
     _update_task_selector(hass, {})

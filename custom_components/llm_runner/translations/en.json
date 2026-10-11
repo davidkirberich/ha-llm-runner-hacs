@@ -16,7 +16,7 @@
   "services": {
     "execute": {
       "name": "Execute task",
-      "description": "Run one catalogued add-on task and return its result. Task IDs are validated against the live runner catalog.",
+      "description": "Run one catalogued add-on task. The response is optional; task IDs are validated against the live runner catalog.",
       "fields": {
         "task_id": {
           "name": "Task",

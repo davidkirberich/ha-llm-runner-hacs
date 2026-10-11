@@ -51,7 +51,7 @@ sequence:
       message: "{{ weather_run.result.summary }}"
 ```
 
-`response_variable` receives a mapping with `task_id`, `run_id`, `result`, `queued_at`, `finished_at`, and `duration`; `started_at` and `request_id` are included when available. The task's `result` is returned as an object. Errors, timeouts, disconnects, runner restarts, invalid protocol messages, and unknown task IDs fail the action instead of returning a misleading success.
+`response_variable` is optional. Set it when a later automation step needs the response; it receives a mapping with `task_id`, `run_id`, `result`, `queued_at`, `finished_at`, and `duration`, with `started_at` and `request_id` included when available. If omitted, the action still waits for the task to finish but discards its response. Errors, timeouts, disconnects, runner restarts, invalid protocol messages, and unknown task IDs fail the action instead of returning a misleading success.
 
 Supported action data:
 

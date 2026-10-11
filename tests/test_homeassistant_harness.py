@@ -111,6 +111,7 @@ class IntegrationHarnessTests(unittest.IsolatedAsyncioTestCase):
 
         class SupportsResponse:
             ONLY = "only"
+            OPTIONAL = "optional"
 
         core.SupportsResponse = SupportsResponse
         def callback(handler):
@@ -166,9 +167,9 @@ class IntegrationHarnessTests(unittest.IsolatedAsyncioTestCase):
             await self.integration.async_unload_entry(self.hass, self.entry)
         self.module_patch.stop()
 
-    async def test_service_is_response_only_and_returns_immediate_result(self) -> None:
+    async def test_service_allows_optional_response_and_returns_result(self) -> None:
         handler, options = self.hass.registered_services[("llm_runner", "execute")]
-        self.assertEqual(options["supports_response"], "only")
+        self.assertEqual(options["supports_response"], "optional")
 
         async def runner(topic, payload, qos, retain):
             request = json.loads(payload)
